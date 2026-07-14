@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#000000" />
+<title>铜钱雨｜俯拍铜钱波纹</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+  }
+  body {
+    display: grid;
+    place-items: center;
+    cursor: crosshair;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  canvas {
+    width: 100vw;
+    height: 100dvh;
+    display: block;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+
+  let W = 0, H = 0, DPR = 1;
+  let t = 0;
+  let last = performance.now();
+  let nextAuto = 0;
+  let pointer = { x: 0, y: 0, active: false };
+
+  const ripples = [];
+  const sparks = [];
+  const dust = [];
+  const MAX_RIPPLES = 16;
+
+  function rand(a = 1, b = 0) { return b + Math.random() * (a - b); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+  function easeOutQuart(x) { return 1 - Math.pow(1 - x, 4); }
+
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildDust();
+  }
+
+  function buildDust() {
+    dust.length = 0;
+    const count = Math.floor((W * H) / 8500);
+    for (let i = 0; i < count; i++) {
+      dust.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: 0.25 + Math.random() * 1.15,
+        a: 0.025 + Math.random() * 0.12,
+        tw: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  function spawnRipple(x, y, forcedSize) {
+    if (ripples.length > MAX_RIPPLES) ripples.splice(0, ripples.length - MAX_RIPPLES + 1);
+
+    const sizeRoll = Math.random();
+    let base;
+    if (forcedSize) {
+      base = forcedSize;
+    } else if (sizeRoll < 0.52) {
+      base = rand(30, 66);
+    } else if (sizeRoll < 0.84) {
+      base = rand(70, 125);
+    } else {
+      base = rand(140, 230);
+    }
+
+    ripples.push({
+      x, y,
+      base,
+      age: 0,
+      dur: rand(1.65, 3.65),
+      rot: rand(Math.PI * 2, 0),
+      spin: rand(-0.25, 0.25),
+      wobble: rand(0.04, 0.13),
+      gold: 0.45 + Math.random() * 0.45,
+      seed: Math.random() * 1000
+    });
+
+    const n = Math.floor(rand(8, 20));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rand(10, 58);
+      sparks.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp * 0.72,
+        age: 0,
+        dur: rand(0.42, 1.15),
+        r: rand(0.55, 1.8),
+        gold: Math.random() > 0.45
+      });
+    }
+  }
+
+  function spawnAuto() {
+    const margin = Math.min(W, H) * 0.08;
+    let x = rand(W - margin, margin);
+    let y = rand(H - margin, margin);
+
+    // 若鼠标在画面中，少量铜钱雨会偏向鼠标附近，但不形成过密雨阵。
+    if (pointer.active && Math.random() < 0.42) {
+      x = pointer.x + rand(-180, 180);
+      y = pointer.y + rand(-140, 140);
+      x = clamp(x, margin, W - margin);
+      y = clamp(y, margin, H - margin);
+    }
+    spawnRipple(x, y);
+  }
+
+  function drawBackground() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // 极暗水面/地面质感：不是文字，也不是图形说明，只作为黑底空间纹理。
+    const g = ctx.createRadialGradient(W * 0.5, H * 0.46, 20, W * 0.5, H * 0.52, Math.max(W, H) * 0.82);
+    g.addColorStop(0, 'rgba(34,38,38,0.19)');
+    g.addColorStop(0.45, 'rgba(10,12,12,0.12)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const d of dust) {
+      const a = d.a * (0.45 + 0.55 * Math.sin(t * 0.45 + d.tw));
+      ctx.fillStyle = `rgba(240,248,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 极细网格感，弱到接近不可见，贴合“相对论”黑底系统。
+    ctx.save();
+    ctx.globalAlpha = 0.035;
+    ctx.strokeStyle = 'rgba(200,225,230,0.28)';
+    ctx.lineWidth = 0.5;
+    const step = Math.max(64, Math.min(W, H) / 8);
+    for (let x = (t * 6) % step; x < W; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = (t * 4) % step; y < H; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawDashedCircle(x, y, r, alpha, color, width, offset) {
+    const seg = Math.max(14, Math.floor(r / 4));
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < seg; i++) {
+      if ((i + offset) % 3 === 0) continue;
+      const a0 = (i / seg) * Math.PI * 2 + offset * 0.031;
+      const a1 = ((i + 0.58) / seg) * Math.PI * 2 + offset * 0.031;
+      ctx.beginPath();
+      ctx.arc(x, y, r, a0, a1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCoinSquare(x, y, s, rot, alpha, lineW) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.globalCompositeOperation = 'lighter';
+
+    ctx.strokeStyle = `rgba(255,255,248,${alpha * 0.92})`;
+    ctx.lineWidth = lineW;
+    ctx.strokeRect(-s / 2, -s / 2, s, s);
+
+    ctx.strokeStyle = `rgba(218,176,96,${alpha * 0.55})`;
+    ctx.lineWidth = Math.max(0.45, lineW * 0.45);
+    ctx.strokeRect(-s * 0.64, -s * 0.64, s * 1.28, s * 1.28);
+
+    ctx.restore();
+  }
+
+  function drawCoinRipple(r) {
+    const p = clamp(r.age / r.dur, 0, 1);
+    const ep = easeOutQuart(p);
+    const fade = Math.pow(1 - p, 1.55);
+    if (fade <= 0) return;
+
+    const radius = r.base * (0.18 + ep * 1.05);
+    const inner = radius * (0.30 + 0.04 * Math.sin(r.seed + t * 1.5));
+    const rot = r.rot + t * r.spin;
+
+    const white = `rgba(246,252,255,1)`;
+    const gold = `rgba(222,178,96,1)`;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 中心滴落瞬间的白光，不画雨线，只保留落点。
+    const coreA = Math.pow(1 - p, 4.2);
+    if (coreA > 0.01) {
+      const cg = ctx.createRadialGradient(r.x, r.y, 0, r.x, r.y, radius * 0.42);
+      cg.addColorStop(0, `rgba(255,255,255,${coreA * 0.95})`);
+      cg.addColorStop(0.28, `rgba(246,252,255,${coreA * 0.38})`);
+      cg.addColorStop(1, `rgba(255,255,255,0)`);
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, radius * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 铜钱外圆：淡金余光 + 白色水波。
+    drawDashedCircle(r.x, r.y, radius * 0.98, fade * 0.72, white, Math.max(0.55, radius * 0.014), Math.floor(r.seed));
+    drawDashedCircle(r.x, r.y, radius * 0.72, fade * 0.38, white, Math.max(0.45, radius * 0.008), Math.floor(r.seed + 11));
+    drawDashedCircle(r.x, r.y, radius * 1.28, fade * 0.22, white, Math.max(0.35, radius * 0.005), Math.floor(r.seed + 23));
+    drawDashedCircle(r.x, r.y, radius * 0.94, fade * 0.42 * r.gold, gold, Math.max(0.45, radius * 0.009), Math.floor(r.seed + 31));
+
+    // 水面外扩波纹：像池塘涟漪一样慢慢扩大。
+    for (let i = 0; i < 4; i++) {
+      const rr = radius * (1.05 + i * 0.28 + p * 0.45);
+      const a = fade * (0.18 - i * 0.028);
+      if (a <= 0) continue;
+      drawDashedCircle(r.x, r.y, rr, a, i % 2 ? gold : white, Math.max(0.25, radius * 0.0035), Math.floor(r.seed + i * 19 + t * 9));
+    }
+
+    // 铜钱内方孔：随波纹一起放大，并快速隐去。
+    drawCoinSquare(r.x, r.y, inner, rot, fade * 0.92, Math.max(0.55, radius * 0.016));
+
+    // 一点点铜钱表面的金色碎光。
+    const dots = Math.min(26, Math.max(7, Math.floor(radius / 7)));
+    for (let i = 0; i < dots; i++) {
+      const a = (i / dots) * Math.PI * 2 + r.seed + Math.sin(t * 0.45 + i) * 0.12;
+      const rr = radius * (0.55 + 0.63 * ((i * 37) % 100) / 100);
+      const x = r.x + Math.cos(a) * rr;
+      const y = r.y + Math.sin(a) * rr * (0.84 + r.wobble);
+      const da = fade * (0.06 + ((i * 17) % 100) / 100 * 0.23);
+      ctx.fillStyle = i % 3 === 0 ? `rgba(222,178,96,${da})` : `rgba(245,250,255,${da})`;
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(0.35, radius * 0.0045), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function update(dt) {
+    t += dt;
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].age += dt;
+      if (ripples[i].age > ripples[i].dur) ripples.splice(i, 1);
+    }
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.age += dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vx *= Math.pow(0.08, dt);
+      s.vy *= Math.pow(0.08, dt);
+      if (s.age > s.dur) sparks.splice(i, 1);
+    }
+
+    nextAuto -= dt;
+    if (nextAuto <= 0) {
+      spawnAuto();
+      nextAuto = rand(0.48, 1.24); // 密度不要太大
+    }
+  }
+
+  function drawSparks() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of sparks) {
+      const p = clamp(s.age / s.dur, 0, 1);
+      const a = Math.pow(1 - p, 1.7) * 0.65;
+      ctx.fillStyle = s.gold ? `rgba(222,178,96,${a})` : `rgba(245,252,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r * (1 + p * 0.7), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function draw() {
+    drawBackground();
+    // 先画大的，后画小的，避免大波纹盖住精细铜钱。
+    ripples.slice().sort((a, b) => b.base - a.base).forEach(drawCoinRipple);
+    drawSparks();
+  }
+
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function canvasPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / rect.width * W,
+      y: (e.clientY - rect.top) / rect.height * H
+    };
+  }
+
+  function clickBurst(x, y) {
+    const count = 4 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.random() * 72;
+      const size = i === 0 ? rand(150, 245) : rand(35, 140);
+      spawnRipple(
+        clamp(x + Math.cos(a) * d, 0, W),
+        clamp(y + Math.sin(a) * d, 0, H),
+        size
+      );
+    }
+  }
+
+  canvas.addEventListener('pointermove', e => {
+    const p = canvasPoint(e);
+    pointer.x = p.x;
+    pointer.y = p.y;
+    pointer.active = true;
+  }, { passive: true });
+
+  canvas.addEventListener('pointerleave', () => {
+    pointer.active = false;
+  });
+
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const p = canvasPoint(e);
+    pointer.x = p.x;
+    pointer.y = p.y;
+    pointer.active = true;
+    clickBurst(p.x, p.y);
+  }, { passive: false });
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 's' || e.key === 'S') {
+      const a = document.createElement('a');
+      a.download = '铜钱雨_俯拍铜钱波纹.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    }
+  });
+
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 初始画面：少量大小不同的铜钱波纹。
+  for (let i = 0; i < 8; i++) {
+    spawnRipple(rand(W * 0.92, W * 0.08), rand(H * 0.88, H * 0.08));
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
