@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<title>CO₂ Jellyfish Chase｜珊瑚花海草追逐游戏</title>
+<style>
+  :root{
+    --bg:#000;
+    --white:#eaf7ff;
+    --blue:#53bfff;
+    --gold:#ffd27a;
+    --muted:rgba(235,247,255,.58);
+  }
+  html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+    color:var(--white);
+  }
+  body{
+    display:grid;
+    place-items:center;
+    background:
+      radial-gradient(circle at 50% 52%, rgba(20,90,140,.18), transparent 40%),
+      radial-gradient(circle at 50% 80%, rgba(255,210,120,.08), transparent 35%),
+      #000;
+  }
+  #wrap{
+    position:relative;
+    width:min(100vw,80vh);
+    height:min(125vw,100vh);
+    max-width:900px;
+    max-height:1125px;
+    aspect-ratio:4/5;
+    overflow:hidden;
+    background:#000;
+    box-shadow:0 0 80px rgba(80,180,255,.08);
+  }
+  canvas{
+    width:100%;
+    height:100%;
+    display:block;
+    background:#000;
+    cursor:none;
+    touch-action:none;
+  }
+  .hud{
+    position:absolute;
+    left:22px;
+    right:22px;
+    top:18px;
+    z-index:5;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:20px;
+    pointer-events:none;
+    text-shadow:0 0 14px rgba(110,200,255,.45);
+  }
+  .title{
+    letter-spacing:.16em;
+    font-size:13px;
+    color:rgba(235,247,255,.78);
+  }
+  .title b{
+    display:block;
+    margin-top:6px;
+    font-family:Georgia,"Times New Roman",serif;
+    font-size:28px;
+    letter-spacing:.16em;
+    font-weight:400;
+    color:#fff;
+  }
+  .stats{
+    min-width:170px;
+    text-align:right;
+    font-size:12px;
+    letter-spacing:.12em;
+    color:rgba(235,247,255,.72);
+    line-height:1.8;
+  }
+  .bar{
+    width:168px;
+    height:4px;
+    margin-top:5px;
+    margin-left:auto;
+    border:1px solid rgba(235,247,255,.24);
+    background:rgba(255,255,255,.04);
+  }
+  .bar i{
+    display:block;
+    height:100%;
+    width:100%;
+    background:linear-gradient(90deg, rgba(255,210,120,.95), rgba(100,210,255,.95));
+    box-shadow:0 0 14px rgba(120,210,255,.65);
+  }
+  .hint{
+    position:absolute;
+    left:24px;
+    right:24px;
+    bottom:22px;
+    z-index:5;
+    display:flex;
+    justify-content:space-between;
+    gap:20px;
+    pointer-events:none;
+    color:rgba(235,247,255,.46);
+    font-size:11px;
+    line-height:1.8;
+    letter-spacing:.08em;
+  }
+  .centerTip{
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    z-index:8;
+    width:min(75%,420px);
+    text-align:center;
+    padding:24px 26px;
+    color:rgba(255,255,255,.86);
+    background:radial-gradient(circle at 50% 20%, rgba(80,180,255,.16), rgba(0,0,0,.72) 72%);
+    border:1px solid rgba(230,248,255,.14);
+    box-shadow:0 0 80px rgba(80,180,255,.12);
+    backdrop-filter:blur(8px);
+    cursor:pointer;
+    user-select:none;
+  }
+  .centerTip h1{
+    margin:0 0 10px;
+    font-family:Georgia,"Times New Roman",serif;
+    letter-spacing:.18em;
+    font-size:24px;
+    font-weight:400;
+  }
+  .centerTip p{
+    margin:8px 0 0;
+    font-size:12px;
+    line-height:1.85;
+    color:rgba(235,247,255,.64);
+    letter-spacing:.08em;
+  }
+  .centerTip small{
+    display:block;
+    margin-top:16px;
+    color:rgba(255,210,120,.72);
+    letter-spacing:.18em;
+  }
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="title">
+      CO₂ JELLYFISH CHASE
+      <b>珊瑚花海草</b>
+    </div>
+    <div class="stats">
+      <div>生存时间 <span id="time">0.0</span>s</div>
+      <div>净化泡泡 <span id="score">0</span></div>
+      <div>珊瑚能量</div>
+      <div class="bar"><i id="life"></i></div>
+    </div>
+  </div>
+
+  <div class="hint">
+    <div>移动鼠标 / 手指拖拽珊瑚花海草，避开 CO₂ 水母。</div>
+    <div>收集金色氧气泡，恢复生命。</div>
+  </div>
+
+  <div class="centerTip" id="start">
+    <h1>CHASE GAME</h1>
+    <p>水母代表二氧化碳，会不断追逐中央的珊瑚花海草。<br>移动它、躲避包围，并收集金色泡泡维持生态能量。</p>
+    <small>点击开始</small>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d", { alpha:false, desynchronized:true });
+  const wrap = document.getElementById("wrap");
+  const startPanel = document.getElementById("start");
+  const timeEl = document.getElementById("time");
+  const scoreEl = document.getElementById("score");
+  const lifeEl = document.getElementById("life");
+
+  let W = 800, H = 1000, DPR = 1;
+  const TAU = Math.PI * 2;
+  const rand = (a=1,b=0)=> b + Math.random()*(a-b);
+  const clamp = (v,a,b)=> Math.max(a,Math.min(b,v));
+
+  let state = "ready";
+  let t = 0, last = performance.now();
+  let score = 0, life = 100, elapsed = 0;
+  let shake = 0;
+  let pointerActive = false;
+
+  const player = { x:400, y:520, tx:400, ty:520, vx:0, vy:0, r:28, inv:0 };
+  const jelly = [];
+  const particles = [];
+  const bubbles = [];
+  const rain = [];
+  const trails = [];
+
+  function resize(){
+    const rect = wrap.getBoundingClientRect();
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.round(rect.width);
+    H = Math.round(rect.height);
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    player.x = clamp(player.x, 70, W-70);
+    player.y = clamp(player.y, 110, H-90);
+    player.tx = clamp(player.tx, 70, W-70);
+    player.ty = clamp(player.ty, 110, H-90);
+  }
+  window.addEventListener("resize", resize, { passive:true });
+  resize();
+
+  function reset(){
+    score = 0; life = 100; elapsed = 0; t = 0; shake = 0;
+    jelly.length = particles.length = bubbles.length = trails.length = 0;
+    player.x = W/2; player.y = H*0.55; player.tx = player.x; player.ty = player.y; player.vx = player.vy = 0; player.inv = 1.2;
+
+    for(let i=0;i<130;i++){
+      rain.push({
+        x: rand(W), y: rand(H), len: rand(110,25), sp: rand(38,10),
+        a: rand(.22,.035), hue: Math.random()<.7 ? "blue" : "gold"
+      });
+    }
+    for(let i=0;i<13;i++) spawnJelly(true);
+    for(let i=0;i<5;i++) spawnBubble();
+  }
+
+  function spawnJelly(initial=false){
+    const side = Math.floor(rand(4));
+    let x,y;
+    if(initial){
+      const ang = rand(TAU);
+      const rr = rand(Math.min(W,H)*.44, Math.min(W,H)*.24);
+      x = W/2 + Math.cos(ang)*rr;
+      y = H/2 + Math.sin(ang)*rr;
+    }else if(side===0){x=rand(W);y=-60}
+    else if(side===1){x=W+60;y=rand(H)}
+    else if(side===2){x=rand(W);y=H+60}
+    else{x=-60;y=rand(H)}
+    const r = rand(25,12);
+    jelly.push({
+      x,y,
+      vx:0,vy:0,
+      r,
+      speed: rand(44,24) / Math.sqrt(r/16),
+      turn: rand(1.0,.35),
+      phase: rand(TAU),
+      glow: rand(1,.55),
+      hit:0,
+      trail:[]
+    });
+  }
+
+  function spawnBubble(){
+    bubbles.push({
+      x: rand(W-120,60),
+      y: rand(H-180,120),
+      r: rand(10,6),
+      phase: rand(TAU),
+      taken:0
+    });
+  }
+
+  function addParticle(x,y,kind="blue",n=1,force=1){
+    for(let i=0;i<n;i++){
+      const a = rand(TAU), s = rand(2.6,.25)*force;
+      particles.push({
+        x,y,
+        vx:Math.cos(a)*s, vy:Math.sin(a)*s,
+        life: rand(1.1,.35),
+        max: 1,
+        r: rand(2.6,.6),
+        kind
+      });
+    }
+  }
+
+  function pointer(e){
+    const rect = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    player.tx = clamp(p.clientX - rect.left, 50, W-50);
+    player.ty = clamp(p.clientY - rect.top, 80, H-50);
+    pointerActive = true;
+  }
+  canvas.addEventListener("pointermove", pointer);
+  canvas.addEventListener("pointerdown", e=>{ pointer(e); if(state!=="play") startGame(); });
+  canvas.addEventListener("touchmove", e=>{ e.preventDefault(); pointer(e); }, { passive:false });
+  startPanel.addEventListener("click", startGame);
+
+  function startGame(){
+    reset();
+    state="play";
+    startPanel.classList.add("hidden");
+  }
+
+  function gameOver(){
+    state="over";
+    startPanel.innerHTML = `<h1>生态失衡</h1>
+      <p>珊瑚花海草被 CO₂ 水母包围。<br>生存 ${elapsed.toFixed(1)} 秒，净化泡泡 ${score} 个。</p>
+      <small>点击重新开始</small>`;
+    startPanel.classList.remove("hidden");
+  }
+
+  function update(dt){
+    t += dt;
+    if(state !== "play") return;
+
+    elapsed += dt;
+    life -= dt * (2.8 + Math.min(5, elapsed/32));
+    player.inv = Math.max(0, player.inv - dt);
+    if(life <= 0) { life=0; gameOver(); }
+
+    const ease = pointerActive ? .12 : .035;
+    player.vx = (player.tx - player.x) * ease;
+    player.vy = (player.ty - player.y) * ease;
+    player.x += player.vx;
+    player.y += player.vy;
+
+    if(Math.random() < dt*(.45 + elapsed*.012) && jelly.length < 34) spawnJelly();
+    if(Math.random() < dt*.55 && bubbles.length < 7) spawnBubble();
+
+    for(const j of jelly){
+      j.phase += dt*2.4;
+      const dx = player.x - j.x, dy = player.y - j.y;
+      const d = Math.hypot(dx,dy) || 1;
+      const desiredX = dx/d * j.speed;
+      const desiredY = dy/d * j.speed;
+      const swirl = Math.sin(t*1.25 + j.phase) * 28;
+      const sx = -dy/d * swirl;
+      const sy = dx/d * swirl;
+      j.vx += (desiredX + sx - j.vx) * dt * j.turn;
+      j.vy += (desiredY + sy - j.vy) * dt * j.turn;
+      j.vx *= .993; j.vy *= .993;
+      j.x += j.vx * dt;
+      j.y += j.vy * dt;
+      j.hit = Math.max(0, j.hit - dt);
+
+      j.trail.push({x:j.x,y:j.y});
+      if(j.trail.length > 18) j.trail.shift();
+
+      if(d < j.r + player.r*.85 && player.inv <= 0){
+        life -= 16;
+        player.inv = .55;
+        j.hit = 1;
+        shake = .7;
+        addParticle(player.x, player.y, "gold", 22, 2);
+        addParticle(j.x, j.y, "blue", 18, 2);
+      }
+    }
+
+    for(let i=bubbles.length-1;i>=0;i--){
+      const b = bubbles[i];
+      b.phase += dt*3;
+      b.y += Math.sin(t*1.6 + b.phase)*dt*6;
+      const d = Math.hypot(player.x-b.x, player.y-b.y);
+      if(d < player.r + b.r + 8){
+        score++;
+        life = Math.min(100, life + 18);
+        addParticle(b.x,b.y,"gold",34,2.2);
+        bubbles.splice(i,1);
+      }
+    }
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.life -= dt;
+      p.x += p.vx * 38 * dt;
+      p.y += p.vy * 38 * dt;
+      p.vx *= .985; p.vy *= .985;
+      if(p.life <= 0) particles.splice(i,1);
+    }
+
+    if(Math.random()<dt*26){
+      trails.push({
+        x: player.x + rand(54,-54),
+        y: player.y + rand(54,-54),
+        r: rand(90,18),
+        a: rand(TAU),
+        life: rand(1.2,.45)
+      });
+    }
+    for(let i=trails.length-1;i>=0;i--){
+      trails[i].life -= dt;
+      trails[i].a += dt*.25;
+      if(trails[i].life<=0) trails.splice(i,1);
+    }
+
+    shake = Math.max(0, shake - dt*2);
+  }
+
+  function lineGlow(x1,y1,x2,y2,color,alpha,w){
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12*w;
+    ctx.beginPath();
+    ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBackground(){
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0,0,W,H);
+
+    const grd = ctx.createRadialGradient(W/2,H*.54,10,W/2,H*.54,Math.min(W,H)*.58);
+    grd.addColorStop(0,"rgba(16,70,100,.24)");
+    grd.addColorStop(.45,"rgba(4,25,40,.14)");
+    grd.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0,0,W,H);
+
+    for(const r of rain){
+      r.y += r.sp * .016;
+      if(r.y > H+70){ r.y=-90; r.x=rand(W); }
+      const c = r.hue==="gold" ? "255,210,120" : "90,190,255";
+      ctx.strokeStyle = `rgba(${c},${r.a})`;
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(r.x,r.y);
+      ctx.lineTo(r.x,r.y+r.len);
+      ctx.stroke();
+    }
+
+    ctx.save();
+    ctx.translate(W/2,H*.57);
+    for(let k=0;k<8;k++){
+      const rad = Math.min(W,H)*(0.16+k*.047);
+      ctx.globalAlpha = .10 - k*.006;
+      ctx.strokeStyle = k%2 ? "rgba(110,205,255,.55)" : "rgba(255,210,120,.42)";
+      ctx.lineWidth = .7;
+      ctx.beginPath();
+      ctx.ellipse(0,0,rad*1.22,rad*.38,Math.sin(t*.09+k)*.24,0,TAU);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCoral(x,y,scale=1){
+    ctx.save();
+    ctx.translate(x,y);
+    const blink = player.inv>0 ? .66 + Math.sin(t*35)*.25 : 1;
+    ctx.globalAlpha = blink;
+    ctx.shadowColor = "rgba(255,218,140,.95)";
+    ctx.shadowBlur = 32*scale;
+
+    // central trunk
+    const trunk = ctx.createLinearGradient(0,52*scale,0,-84*scale);
+    trunk.addColorStop(0,"rgba(20,35,45,.2)");
+    trunk.addColorStop(.35,"rgba(160,230,255,.65)");
+    trunk.addColorStop(1,"rgba(255,225,150,.95)");
+    ctx.strokeStyle = trunk;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    function branch(a,len,curv,w,off=0){
+      ctx.save();
+      ctx.rotate(a);
+      ctx.lineWidth = w*scale;
+      ctx.beginPath();
+      ctx.moveTo(0,44*scale);
+      ctx.bezierCurveTo(curv*scale,10*scale,(curv*.55)*scale,-len*.38*scale,off*scale,-len*scale);
+      ctx.stroke();
+      ctx.restore();
+
+      const tx = Math.sin(a)*len*scale + off*scale*Math.cos(a);
+      const ty = 44*scale - Math.cos(a)*len*scale;
+      ctx.save();
+      ctx.fillStyle="rgba(255,232,165,.95)";
+      ctx.shadowBlur=18*scale;
+      ctx.beginPath();
+      ctx.arc(tx,ty,3.2*scale,0,TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.lineWidth = 13*scale;
+    ctx.beginPath();
+    ctx.moveTo(0,58*scale);
+    ctx.bezierCurveTo(-10*scale,20*scale,-4*scale,-30*scale,0,-82*scale);
+    ctx.stroke();
+
+    const arms = [-.92,-.66,-.42,-.22,.22,.42,.66,.92];
+    for(let i=0;i<arms.length;i++){
+      const a = arms[i] + Math.sin(t*1.5+i)*.035;
+      branch(a, randStatic(i,78,115), (i%2? -28:28), 5.2-(Math.abs(arms[i])*.9), Math.sin(i)*12);
+      if(i%2===0) branch(a*.8, randStatic(i+9,55,86), (i%3-1)*24, 3.2, Math.cos(i)*16);
+    }
+
+    // base sea grass
+    ctx.shadowBlur = 16*scale;
+    for(let i=0;i<26;i++){
+      const a = (i/26)*TAU;
+      const len = (34 + (i%5)*7)*scale;
+      ctx.strokeStyle = i%3===0 ? "rgba(98,208,255,.45)" : "rgba(255,218,130,.34)";
+      ctx.lineWidth = 1.2*scale;
+      ctx.beginPath();
+      ctx.moveTo(0,62*scale);
+      ctx.quadraticCurveTo(Math.cos(a)*len*.5, 72*scale+Math.sin(a)*len*.28, Math.cos(a)*len, 78*scale+Math.sin(a)*len*.38);
+      ctx.stroke();
+    }
+
+    // protected radius
+    ctx.globalAlpha = .45*blink;
+    ctx.shadowBlur = 18*scale;
+    ctx.strokeStyle="rgba(255,230,160,.28)";
+    ctx.lineWidth=1.2*scale;
+    ctx.beginPath();
+    ctx.arc(0,0,player.r*1.55*scale,0,TAU);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function randStatic(i,a,b){
+    const x = Math.sin(i*12.9898)*43758.5453;
+    return a + (x-Math.floor(x))*(b-a);
+  }
+
+  function drawJelly(j){
+    const angle = Math.atan2(j.vy,j.vx) + Math.PI/2;
+    ctx.save();
+    ctx.translate(j.x,j.y);
+    ctx.rotate(angle);
+    const pulse = 1 + Math.sin(t*4+j.phase)*.08;
+    const r = j.r*pulse;
+
+    // trail tentacles behind
+    ctx.save();
+    ctx.rotate(-angle);
+    for(let i=0;i<j.trail.length-1;i++){
+      const a = i/(j.trail.length-1);
+      const p = j.trail[i], q = j.trail[i+1];
+      ctx.strokeStyle = `rgba(80,190,255,${.018 + a*.07})`;
+      ctx.lineWidth = 1 + a*1.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x-j.x,p.y-j.y);
+      ctx.lineTo(q.x-j.x,q.y-j.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const core = j.hit>0 ? "rgba(255,105,70,.95)" : "rgba(255,216,135,.9)";
+    ctx.shadowColor = j.hit>0 ? "rgba(255,90,80,.95)" : "rgba(90,195,255,.92)";
+    ctx.shadowBlur = 26*j.glow;
+
+    // bell
+    const g = ctx.createRadialGradient(0,-r*.15,r*.2,0,0,r*1.12);
+    g.addColorStop(0,"rgba(255,255,255,.90)");
+    g.addColorStop(.34,"rgba(120,210,255,.38)");
+    g.addColorStop(.72,"rgba(80,185,255,.16)");
+    g.addColorStop(1,"rgba(255,255,255,.02)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0,0,r*1.05,r*.68,0,Math.PI,TAU);
+    ctx.quadraticCurveTo(r*.72,r*.16,0,r*.18);
+    ctx.quadraticCurveTo(-r*.72,r*.16,-r*1.05,0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle="rgba(220,245,255,.75)";
+    ctx.lineWidth=1.2;
+    ctx.beginPath();
+    ctx.ellipse(0,0,r*1.02,r*.65,0,Math.PI,TAU);
+    ctx.stroke();
+
+    // warm core
+    ctx.fillStyle=core;
+    ctx.shadowColor=core;
+    ctx.shadowBlur=18;
+    ctx.beginPath();
+    ctx.arc(0,-r*.07,r*.18,0,TAU);
+    ctx.fill();
+
+    // tentacles
+    ctx.shadowColor="rgba(80,190,255,.65)";
+    ctx.shadowBlur=12;
+    for(let i=0;i<8;i++){
+      const off = (i-3.5)*r*.18;
+      const len = r*(1.15 + (i%3)*.22);
+      ctx.strokeStyle = `rgba(115,205,255,${.34 - Math.abs(i-3.5)*.035})`;
+      ctx.lineWidth = i%2 ? .9 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(off,r*.08);
+      ctx.bezierCurveTo(
+        off + Math.sin(t*3+j.phase+i)*r*.20, r*.45,
+        off + Math.cos(t*2+j.phase+i)*r*.30, len*.72,
+        off + Math.sin(t*1.6+j.phase+i)*r*.36, len
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawBubble(b){
+    ctx.save();
+    ctx.translate(b.x,b.y);
+    const rr = b.r + Math.sin(t*2+b.phase)*1.2;
+    ctx.shadowColor = "rgba(255,215,125,.95)";
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = "rgba(255,226,150,.75)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0,0,rr,0,TAU);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,216,120,.12)";
+    ctx.fill();
+    ctx.fillStyle="rgba(255,245,210,.9)";
+    ctx.beginPath();
+    ctx.arc(-rr*.25,-rr*.28,rr*.18,0,TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawParticles(){
+    for(const tr of trails){
+      ctx.save();
+      ctx.translate(tr.x,tr.y);
+      ctx.rotate(tr.a);
+      ctx.globalAlpha = Math.max(0,tr.life)*.22;
+      ctx.strokeStyle = "rgba(115,210,255,.68)";
+      ctx.shadowColor = "rgba(85,185,255,.7)";
+      ctx.shadowBlur = 8;
+      ctx.lineWidth=.7;
+      ctx.beginPath();
+      ctx.ellipse(0,0,tr.r,tr.r*.22,0,0,TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    for(const p of particles){
+      const a = Math.max(0,p.life);
+      if(p.kind==="gold"){
+        ctx.fillStyle = `rgba(255,220,140,${a})`;
+        ctx.shadowColor = "rgba(255,215,120,.9)";
+      }else{
+        ctx.fillStyle = `rgba(110,205,255,${a})`;
+        ctx.shadowColor = "rgba(90,190,255,.9)";
+      }
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r,0,TAU);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  function draw(){
+    const sx = (Math.random()-.5)*shake*10;
+    const sy = (Math.random()-.5)*shake*10;
+    ctx.save();
+    ctx.translate(sx,sy);
+    drawBackground();
+
+    // orbit lines around player / chase field
+    ctx.save();
+    ctx.translate(player.x,player.y);
+    for(let i=0;i<5;i++){
+      ctx.rotate(.25 + i*.08 + Math.sin(t*.16+i)*.12);
+      ctx.globalAlpha = .12;
+      ctx.strokeStyle = i%2 ? "rgba(255,215,130,.55)" : "rgba(90,190,255,.65)";
+      ctx.lineWidth = .8;
+      ctx.beginPath();
+      ctx.ellipse(0,0,125+i*38,42+i*16,0,0,TAU);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    for(const b of bubbles) drawBubble(b);
+    for(const j of jelly) drawJelly(j);
+    drawParticles();
+    drawCoral(player.x,player.y,1);
+
+    // cursor / target dot
+    if(pointerActive && state==="play"){
+      ctx.save();
+      ctx.globalAlpha=.55;
+      ctx.strokeStyle="rgba(255,255,255,.45)";
+      ctx.shadowColor="rgba(90,190,255,.8)";
+      ctx.shadowBlur=12;
+      ctx.beginPath();
+      ctx.arc(player.tx,player.ty,9,0,TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    timeEl.textContent = elapsed.toFixed(1);
+    scoreEl.textContent = String(score);
+    lifeEl.style.width = `${life}%`;
+
+    if(state==="ready"){
+      // slow decorative idle
+      ctx.save();
+      ctx.globalAlpha = .8;
+      drawCoral(W/2,H*.55,1.05);
+      ctx.restore();
+    }
+  }
+
+  function loop(now){
+    const dt = Math.min(.033,(now-last)/1000 || .016);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
